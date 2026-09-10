@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
+import pydeck as pdk
+
 
 ART = Path(__file__).parent / "artefactos"
 
@@ -91,6 +93,20 @@ BARRIOS = {
     "Resto de barrios": None,  # categoría de referencia
 }
 
+CENTROIDES = {
+    "Sant Pere, Santa Caterina i la Ribera": (41.3865, 2.1810),
+    "Sants": (41.3750, 2.1330),
+    "El Barri Gòtic": (41.3830, 2.1770),
+    "El Fort Pienc": (41.3950, 2.1810),
+    "El Poble Sec": (41.3730, 2.1620),
+    "El Raval": (41.3800, 2.1690),
+    "L'Antiga Esquerra de l'Eixample": (41.3880, 2.1520),
+    "La Barceloneta": (41.3800, 2.1900),
+    "La Dreta de l'Eixample": (41.3930, 2.1650),
+    "La Sagrada Família": (41.4050, 2.1750),
+    "La Vila de Gràcia": (41.4020, 2.1560),
+    "Resto de barrios": (41.3900, 2.1600),
+}
 TIPOS = {
     "Vivienda entera": "property_type_agrupado_Entire_rental_unit",
     "Habitación privada en vivienda": "property_type_agrupado_Private_room_in_rental_unit",
@@ -169,8 +185,11 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Ubicación exacta")
-    lat = st.number_input("Latitud", value=LAT_DEF, format="%.5f")
-    lon = st.number_input("Longitud", value=LON_DEF, format="%.5f")
+    lat_def, lon_def = CENTROIDES[barrio]
+    lat = st.number_input("Latitud", value=lat_def, format="%.5f", key=f"lat_{barrio}")
+
+    lon = st.number_input("Longitud", value=lon_def, format="%.5f", key=f"lon_{barrio}")
+  
 
     st.divider()
     st.subheader("Equipamiento")
@@ -241,6 +260,8 @@ with tab_precio:
         f"×{np.exp(-RMSE_LOG):.2f} y ×{np.exp(RMSE_LOG):.2f} sobre el precio estimado)."
     )
 
+  
+
     st.subheader("Simulador: ¿cuánto suma cada mejora?")
     st.caption("Cambio en el precio estimado si añades cada equipamiento manteniendo todo lo demás igual.")
     filas = []
@@ -302,6 +323,62 @@ with tab_mercado:
         st.bar_chart(hist.rename("Anuncios"))
     else:
         st.info("Pocos comparables con estos filtros. Amplía el número de huéspedes o elige 'Resto de barrios'.")
+        CENTROIDES = {
+        "Sant Pere, Santa Caterina i la Ribera": (41.3865, 2.1810),
+        "Sants": (41.3750, 2.1330),
+        "El Barri Gòtic": (41.3830, 2.1770),
+        "El Fort Pienc": (41.3950, 2.1810),
+        "El Poble Sec": (41.3730, 2.1620),
+        "El Raval": (41.3800, 2.1690),
+        "L'Antiga Esquerra de l'Eixample": (41.3880, 2.1520),
+        "La Barceloneta": (41.3800, 2.1900),
+        "La Dreta de l'Eixample": (41.3930, 2.1650),
+        "La Sagrada Família": (41.4050, 2.1750),
+        "La Vila de Gràcia": (41.4020, 2.1560),
+    }
+
+    filas = []
+    for nombre, col in BARRIOS.items():
+        if col is None or nombre not in CENTROIDES:
+            continue
+        sub = ref[ref[col] == 1]
+        if len(sub) < 15:
+            continue
+        lat_b, lon_b = CENTROIDES[nombre]
+        filas.append({"barrio": nombre, "lat": lat_b, "lon": lon_b,
+                      "mediana": int(round(sub["price_eur"].median())), "n": len(sub)})
+
+    if filas:
+        mapa = pd.DataFrame(filas)
+        lo, hi = mapa["mediana"].min(), mapa["mediana"].max()
+        t = (mapa["mediana"] - lo) / max(hi - lo, 1)
+        mapa["c"] = [[int(225 * v + 25), 70, int(225 * (1 - v) + 25), 190] for v in t]
+        mapa["r"] = 200 + 500 * t
+        mapa["etiqueta"] = mapa["mediana"].astype(str) + " €"
+        mapa["tip"] = (mapa["barrio"] + ": " + mapa["mediana"].astype(str)
+                       + " €/noche (" + mapa["n"].astype(str) + " anuncios)")
+
+        st.subheader("Precio mediano por barrio")
+        st.pydeck_chart(pdk.Deck(
+            map_style="light",
+            initial_view_state=pdk.ViewState(latitude=41.392, longitude=2.168, zoom=12.1),
+            layers=[
+                pdk.Layer("ScatterplotLayer", mapa, get_position=["lon", "lat"],
+                          get_fill_color="c", get_radius="r", pickable=True),
+                pdk.Layer("TextLayer", mapa, get_position=["lon", "lat"],
+                          get_text="etiqueta", get_size=13, get_color=[255, 255, 255]),
+                pdk.Layer("ScatterplotLayer", pd.DataFrame([{"lat": lat, "lon": lon}]),
+                          get_position=["lon", "lat"], get_fill_color=[20, 20, 20],
+                          get_radius=140),
+            ],
+            tooltip={"text": "{tip}"},
+        ))
+        st.caption(
+            f"Círculo grande y rojo: barrio más caro. Pequeño y azul: más barato. "
+            f"El número es el precio mediano por noche. Punto negro: tu alojamiento "
+            f"({precio:,.0f} €/noche estimado). Muestra de referencia: {len(ref):,} anuncios "
+            f"del conjunto de test (Inside Airbnb, marzo 2025)."
+        )
 
 with tab_modelo:
     st.subheader("Ficha técnica")
