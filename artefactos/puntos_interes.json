@@ -1,0 +1,32 @@
+[
+  {
+    "feature": "dist_center_km",
+    "address": "Plaça Catalunya",
+    "ylat": 41.385667,
+    "xlong": 2.168373
+  },
+  {
+    "feature": "dist_beach_km",
+    "address": "La Barceloneta",
+    "ylat": 41.382042,
+    "xlong": 2.185443
+  },
+  {
+    "feature": "dist_sagrada_familia_km",
+    "address": "Sagrada Família",
+    "ylat": 41.403505,
+    "xlong": 2.174428
+  },
+  {
+    "feature": "dist_park_guell_km",
+    "address": "Park Güell",
+    "ylat": 41.414235,
+    "xlong": 2.152458
+  },
+  {
+    "feature": "dist_camp_nou_km",
+    "address": "Camp Nou",
+    "ylat": 41.380881,
+    "xlong": 2.122818
+  }
+]
