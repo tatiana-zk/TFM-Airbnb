@@ -6,6 +6,7 @@ Ejecutar en local:   streamlit run app.py
 Estructura esperada:
     app.py
     requirements.txt
+    .streamlit/config.toml
     artefactos/
         modelo_xgb.json
         variables_finales.json
@@ -22,24 +23,99 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import pydeck as pdk
-
-def eur(x):
-    return f"{x:,.0f}".replace(",", ".")
-
-
-ART = Path(__file__).parent / "artefactos"
+import altair as alt
+import base64
 
 st.set_page_config(
     page_title="Precio recomendado | Barcelona",
     page_icon="🏠",
-    layout="wide"
+    layout="wide",
+)
+
+st.markdown(
+    """
+    <style>
+    [data-baseweb="tab"] {font-size: 18px; font-weight: 500;}
+    [data-testid="stCaptionContainer"] {font-size: 15px;}
+    [data-testid="stHeaderActionElements"] {display: none;}
+
+    .hero {
+        position: relative;
+        width: 100%;
+        height: 360px;
+        overflow: hidden;
+        border-radius: 14px;
+        margin-bottom: 28px;
+    }
+
+    .hero img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .hero-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 42px;
+        background: linear-gradient(
+            transparent 25%,
+            rgba(0,0,0,0.65)
+        );
+    }
+
+    .hero-overlay h1 {
+        color: white;
+        font-size: 2.6rem;
+        margin: 0 0 12px 0;
+    }
+
+    .hero-overlay p {
+        color: white;
+        font-size: 1.05rem;
+        max-width: 800px;
+        margin: 0;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
-#carga de artefactos
+def eur(x):
+    """Formatea un número con separador de miles español."""
+    return f"{x:,.0f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
+
+ART = Path(__file__).parent / "artefactos"
+st.markdown(
+    f"""
+    <div class="hero">
+        <img src="data:image/png;base64,{base64.b64encode(
+            (ART / "logo.png").read_bytes()
+        ).decode()}">
+        <div class="hero-overlay">
+            <h1>¿A qué precio debería publicar mi anuncio?</h1>
+            <p>
+                Estima un precio recomendado por noche para tu alojamiento
+                de Airbnb en Barcelona a partir de sus características,
+                ubicación y condiciones del anuncio.
+            </p>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# carga de artefactos
 @st.cache_resource
 def cargar_modelo():
     from xgboost import XGBRegressor
+
     m = XGBRegressor()
     m.load_model(str(ART / "modelo_xgb.json"))
     return m
@@ -65,10 +141,10 @@ ref = cargar_referencia()
 RMSE_LOG = METRICAS["rmse_log_test"]
 
 
-#distancias
+# distancias
 def distancia_km(lat1, lon1, lat2, lon2):
     """Distancia entre dos puntos. Usa la proyección UTM 31N (la misma del
-    notebook) si pyproj está disponible; si no, haversine (diferencia < 0.5%)."""
+    notebook) si pyproj está disponible; si no, haversine (diferencia < 0,5%)."""
     try:
         from pyproj import Transformer
 
@@ -85,7 +161,7 @@ def distancia_km(lat1, lon1, lat2, lon2):
         return 2 * R * math.asin(math.sqrt(a))
 
 
-#catálogos de la UI
+# catálogos de la UI
 BARRIOS = {
     "Sant Pere, Santa Caterina i la Ribera": "neighbourhood_agrupado_Sant_Pere_Santa_Caterina_i_la_Ribera",
     "Sants": "neighbourhood_agrupado_Sants",
@@ -115,12 +191,12 @@ CENTROIDES = {
     "La Vila de Gràcia": (41.4020, 2.1560),
     "Resto de barrios": (41.3900, 2.1600),
 }
+
 TIPOS = {
     "Vivienda entera": "property_type_agrupado_Entire_rental_unit",
     "Habitación privada en vivienda": "property_type_agrupado_Private_room_in_rental_unit",
     "Habitación de hotel": "property_type_agrupado_Room_in_hotel",
     "Otros": "property_type_agrupado_Otros",
-    "Categoría de referencia": None,
 }
 
 HABITACION = {
@@ -150,21 +226,17 @@ SHAP_LABELS = {
     "accommodates": "Huéspedes",
     "bedrooms": "Habitaciones",
     "bathrooms_num": "Número de baños",
-
     "antiguedad_como_host": "Antigüedad como anfitrión (meses)",
     "antiguedad_anuncio": "Antigüedad del anuncio (meses)",
     "calculated_host_listings_count": "Anuncios gestionados por el anfitrión",
-
     "number_of_reviews_ltm": "Reseñas últimos 12 meses",
     "review_scores_rating": "Valoración global",
     "review_scores_location": "Valoración de ubicación",
-
     "dist_center_km": "Distancia al centro (km)",
     "dist_beach_km": "Distancia a la playa (km)",
     "dist_sagrada_familia_km": "Distancia a la Sagrada Familia (km)",
     "dist_park_guell_km": "Distancia al Park Güell (km)",
     "dist_camp_nou_km": "Distancia al Camp Nou (km)",
-
     "host_has_profile_pic_True": "Foto de perfil",
     "room_type_Private_room": "Habitación privada",
     "room_type_Shared_room": "Habitación compartida",
@@ -172,27 +244,21 @@ SHAP_LABELS = {
     "shared_bathroom_True": "Baño compartido",
     "es_gran_tenedor_True": "Gran tenedor",
     "tiene_biografia_True": "Biografía del anfitrión",
-
     "licencia_estado_Licencia_registrada": "Licencia registrada",
     "licencia_estado_Sin_dato": "Licencia sin datos",
-
     "sin_reviews_True": "Anuncio sin reseñas",
     "tiene_descripcion_True": "Descripción del anuncio",
-
     "has_ac_True": "Aire acondicionado",
     "has_elevator_True": "Ascensor",
     "has_workstation_True": "Espacio de trabajo",
     "has_dishwasher_True": "Lavavajillas",
     "has_parking_True": "Parking",
     "has_pool_True": "Piscina",
-
     "host_location_agrupado_Desconocido": "Ubicación del anfitrión desconocida",
-
     "property_type_agrupado_Entire_rental_unit": "Alojamiento entero",
     "property_type_agrupado_Otros": "Otro tipo de propiedad",
     "property_type_agrupado_Private_room_in_rental_unit": "Habitación privada en alojamiento",
     "property_type_agrupado_Room_in_hotel": "Habitación de hotel",
-
     "neighbourhood_agrupado_Sant_Pere_Santa_Caterina_i_la_Ribera": "Barrio: Sant Pere, Santa Caterina i la Ribera",
     "neighbourhood_agrupado_Sants": "Barrio: Sants",
     "neighbourhood_agrupado_el_Barri_Gòtic": "Barrio: Barrio Gótico",
@@ -205,24 +271,50 @@ SHAP_LABELS = {
     "neighbourhood_agrupado_la_Sagrada_Família": "Barrio: Sagrada Família",
     "neighbourhood_agrupado_la_Vila_de_Gràcia": "Barrio: Vila de Gràcia",
 }
-# Centro por defecto: Plaça de Catalunya
-LAT_DEF, LON_DEF = 41.3870, 2.1700
 
 
-#formulario
-st.title("¿A qué precio debería publicar mi anuncio?")
+# cabecera
 
+
+with st.expander("¿Cómo funciona?"):
+    e1, e2, e3 = st.columns(3)
+    e1.markdown("**1 · Describe tu alojamiento**")
+    e1.markdown("Barrio, capacidad, equipamiento y condiciones de reserva.")
+    e2.markdown("**2 · Obtén un precio y un rango**")
+    e2.markdown("El modelo estima el precio y un rango razonable.")
+    e3.markdown("**3 · Entiende la recomendación**")
+    e3.markdown("Consulta qué factores influyen y cómo te comparas con anuncios similares.")
+    st.caption(
+        f"Datos: Inside Airbnb (Barcelona, marzo 2026) · "
+        f"R² en test: {METRICAS['r2_test']:.3f} · "
+        f"Error mediano: {METRICAS['mediana_error_euros']:.0f} €/noche. "
+        "La herramienta es orientativa y no sustituye el criterio del anfitrión."
+    )
+
+
+# formulario
 with st.sidebar:
     st.header("Datos del alojamiento")
 
     barrio = st.selectbox("Barrio", list(BARRIOS))
-    tipo = st.selectbox("Tipo de propiedad", list(TIPOS))
-    room = st.selectbox("Tipo de anuncio", list(HABITACION))
-
     accommodates = st.slider("Huéspedes", 1, 16, 4)
     bedrooms = st.slider("Habitaciones", 0, 8, 2)
     bathrooms = st.slider("Baños", 0.0, 5.0, 1.0, step=0.5)
     shared_bath = st.checkbox("Baño compartido")
+
+    tipo = st.selectbox("Tipo de propiedad", list(TIPOS))
+
+    if tipo == "Vivienda entera":
+        room = "Alojamiento entero"
+        st.selectbox("Tipo de anuncio", ["Alojamiento entero"], disabled=True)
+    elif tipo == "Habitación privada en vivienda":
+        room = "Habitación privada"
+        st.selectbox("Tipo de anuncio", ["Habitación privada"], disabled=True)
+    elif tipo == "Habitación de hotel":
+        room = None
+        st.selectbox("Tipo de anuncio", ["No aplica"], disabled=True)
+    else:
+        room = st.selectbox("Tipo de anuncio", list(HABITACION))
 
     with st.expander("Condiciones de reserva"):
         minimum_nights = st.number_input("Noches mínimas", 1, 365, 2)
@@ -233,64 +325,32 @@ with st.sidebar:
     with st.expander("Reputación"):
         sin_reviews = st.checkbox("Anuncio nuevo, sin reseñas")
         reviews_ltm = st.number_input(
-            "Reseñas en los últimos 12 meses",
-            0, 500,
-            0 if sin_reviews else 20
+            "Reseñas en los últimos 12 meses", 0, 500, 0 if sin_reviews else 20
         )
-        rating = st.slider(
-            "Valoración global",
-            1.0, 5.0, 4.7,
-            step=0.1,
-            disabled=sin_reviews
-        )
+        rating = st.slider("Valoración global", 1.0, 5.0, 4.7, step=0.1, disabled=sin_reviews)
         rating_loc = st.slider(
-            "Valoración de ubicación",
-            1.0, 5.0, 4.8,
-            step=0.1,
-            disabled=sin_reviews
+            "Valoración de ubicación", 1.0, 5.0, 4.8, step=0.1, disabled=sin_reviews
         )
 
     with st.expander("Anfitrión y ubicación"):
         n_anuncios = st.number_input("Anuncios que gestionas", 1, 200, 1)
-        antiguedad_host = st.number_input(
-            "Antigüedad como anfitrión (meses)",
-            0, 240, 36
-        )
-        antiguedad_anuncio = st.number_input(
-            "Antigüedad del anuncio (meses)",
-            0, 240, 12
-        )
+        antiguedad_host = st.number_input("Antigüedad como anfitrión (meses)", 0, 240, 36)
+        antiguedad_anuncio = st.number_input("Antigüedad del anuncio (meses)", 0, 240, 12)
         tiene_bio = st.checkbox("Tengo biografía en el perfil", value=True)
         tiene_desc = st.checkbox("El anuncio tiene descripción", value=True)
         foto_perfil = st.checkbox("Tengo foto de perfil", value=True)
         host_local = st.checkbox("Mi ubicación es pública", value=True)
 
         st.caption("La ubicación se ajusta automáticamente al barrio seleccionado.")
-
         lat_def, lon_def = CENTROIDES[barrio]
-
-        lat = st.number_input(
-            "Latitud",
-            value=lat_def,
-            format="%.5f",
-            key=f"lat_{barrio}"
-        )
-
-        lon = st.number_input(
-            "Longitud",
-            value=lon_def,
-            format="%.5f",
-            key=f"lon_{barrio}"
-        )
+        lat = st.number_input("Latitud", value=lat_def, format="%.5f", key=f"lat_{barrio}")
+        lon = st.number_input("Longitud", value=lon_def, format="%.5f", key=f"lon_{barrio}")
 
     with st.expander("Equipamiento", expanded=True):
-        amenities_sel = {
-            nombre: st.checkbox(nombre)
-            for nombre in AMENITIES
-        }
+        amenities_sel = {nombre: st.checkbox(nombre) for nombre in AMENITIES}
 
 
-#construcción de la fila
+# construcción de la fila
 def construir_fila(amenities_estado):
     fila = {v: 0.0 for v in VARIABLES}
 
@@ -310,7 +370,7 @@ def construir_fila(amenities_estado):
     for p in POI:
         fila[p["feature"]] = distancia_km(lat, lon, p["ylat"], p["xlong"])
 
-    for col in (BARRIOS[barrio], TIPOS[tipo], HABITACION[room], LICENCIA[licencia]):
+    for col in (BARRIOS[barrio], TIPOS[tipo], HABITACION.get(room), LICENCIA[licencia]):
         if col:
             fila[col] = 1.0
 
@@ -336,59 +396,211 @@ banda_baja = float(np.exp(pred_log - RMSE_LOG))
 banda_alta = float(np.exp(pred_log + RMSE_LOG))
 
 
-# Comparables de mercado
+#comparables de mercado
 col_barrio = BARRIOS[barrio]
-
 comparables = ref.copy()
-
 if col_barrio:
     comparables = comparables[comparables[col_barrio] == 1]
-
 comparables = comparables[
     comparables["accommodates"].between(accommodates - 1, accommodates + 1)
 ]
-
 mediana_mercado = (
-    float(comparables["price_eur"].median())
-    if len(comparables) >= 10
-    else None
+    float(comparables["price_eur"].median()) if len(comparables) >= 10 else None
 )
-#salida
+
+
+# salida
 tab_precio, tab_expl, tab_mercado, tab_modelo = st.tabs(
-    ["Precio recomendado", "Qué influye en tu precio", "Comparación de mercado", "Ficha del modelo"]
+    ["Precio recomendado", "Factores", "Mercado", "Modelo"]
 )
+
 
 with tab_precio:
     c1, c2, c3 = st.columns(3)
-    c1.metric("Precio recomendado", f"{precio:,.0f} €/noche", delta=(f"{precio - mediana_mercado:+,.0f} € vs. mediana de comparables"
-                     if mediana_mercado is not None
-                     else None))
-    c2.metric("Rango razonable", f"{banda_baja:,.0f} – {banda_alta:,.0f} €")
-    c3.metric("Ingreso potencial anual", f"{precio * availability_eoy * 0.65:,.0f} €",
-              help="Precio estimado × días disponibles × 65% de ocupación media.")
 
-with st.expander("¿Cómo se calcula el rango?"):
-    st.markdown("El rango se construye con el error del modelo en test "
-        "(RMSE de 0.30 en escala logarítmica), es decir aproximadamente "
-        "×0.74 y ×1.35 sobre el precio estimado.")
-  
+    with c1:
+        with st.container(border=True):
+            st.markdown("**Precio recomendado**")
+            st.markdown(f"## {eur(precio)} €/noche")
+            if mediana_mercado is not None:
+                diferencia = precio - mediana_mercado
+                st.markdown(
+                    f"<span style='background:#E8F5E9; color:#2E7D32; "
+                    f"padding:4px 10px; border-radius:14px; font-size:14px;'>"
+                    f"↑ {eur(abs(diferencia))} € vs. mediana de comparables</span>",
+                    unsafe_allow_html=True)
 
-    st.subheader("Simulador: ¿cuánto suma cada mejora?")
-    st.caption("Cambio en el precio estimado si añades cada equipamiento manteniendo todo lo demás igual.")
-    filas = []
-    for nombre in AMENITIES:
-        if amenities_sel[nombre]:
-            continue
-        estado = dict(amenities_sel)
-        estado[nombre] = True
-        nuevo = float(np.exp(modelo.predict(construir_fila(estado))[0]))
-        filas.append({"Mejora": nombre, "Precio con la mejora (€)": round(nuevo, 1),
-                      "Diferencia (€)": round(nuevo - precio, 1)})
-    if filas:
-        st.dataframe(pd.DataFrame(filas).sort_values("Diferencia (€)", ascending=False),
-                     hide_index=True, use_container_width=True)
-    else:
-        st.info("Ya has marcado todo el equipamiento disponible.")
+    with c2:
+        with st.container(border=True):
+            st.markdown("**Intervalo estimado**")
+            st.markdown(f"## {eur(banda_baja)} – {eur(banda_alta)} €")
+            st.caption("Basado en el error del modelo")
+
+    with c3:
+        with st.container(border=True):
+            st.markdown("**Comparación con el mercado**")
+            if mediana_mercado is not None:
+                diferencia_pct = (precio / mediana_mercado - 1) * 100
+                texto = (
+                    f"+{diferencia_pct:.0f}%"
+                    if diferencia_pct >= 0
+                    else f"{diferencia_pct:.0f}%"
+                )
+                st.markdown(f"## {texto}")
+                st.caption(
+                    f"Recomendado: {eur(precio)} € · Mediana: {eur(mediana_mercado)} €"
+                )
+            else:
+                st.markdown("## —")
+                st.caption("Sin comparables suficientes")
+
+    # Alojamiento, con mini mapa 
+    with st.container(border=True):
+         c1, c2 = st.columns([1.7, 1])
+         with c1:
+            st.markdown("**Tu alojamiento**")
+            st.markdown(f"📍 **{barrio}**")
+            st.caption("Barcelona")
+
+            p1, p2, p3, p4 = st.columns(4)
+            p1.markdown(f"🏠  {tipo}")
+            p2.markdown(f"🛏  {bedrooms} habitaciones")
+            p3.markdown(f"🛀  {bathrooms:g} baño{'s' if bathrooms != 1 else ''}")
+            p4.markdown(f"👥  {accommodates} huéspedes")
+
+         with c2:
+            st.pydeck_chart(pdk.Deck(map_style="light",initial_view_state=pdk.ViewState(latitude=lat, longitude=lon, zoom=12.5),
+                                     layers=[pdk.Layer(
+                            "ScatterplotLayer",
+                            pd.DataFrame([{"lat": lat, "lon": lon}]),
+                            get_position=["lon", "lat"],
+                            get_fill_color=[193, 72, 60, 220],
+                            get_radius=150,)],),height=145,)
+
+
+    # Simulador en formato cascada
+    # Impacto de las mejoras
+    st.subheader("¿Qué impacto tienen las mejoras?")
+    st.caption("Efecto acumulado de añadir cada equipamiento, uno tras otro, partiendo de tu configuración actual.")
+
+    pendientes = [n for n in AMENITIES if not amenities_sel[n]]
+
+    if pendientes:
+        # Orden por impacto individual
+        impactos = []
+        for n in pendientes:
+            e = {**amenities_sel, n: True}
+            p = float(np.exp(modelo.predict(construir_fila(e))[0]))
+            impactos.append((n, p - precio))
+
+        orden_mejoras = [n for n, _ in sorted(impactos, key=lambda x: x[1], reverse=True)]
+
+        # Cascada acumulada: recalcular XGBoost en cada paso
+        pasos, estado, anterior = [], amenities_sel.copy(), precio
+
+        for n in orden_mejoras:
+            estado[n] = True
+            nuevo = float(np.exp(modelo.predict(construir_fila(estado))[0]))
+            pasos.append((n, anterior, nuevo, nuevo - anterior))
+            anterior = nuevo
+
+        precio_final = anterior
+        pasos = [("Precio actual", precio, precio, 0)] + pasos
+        pasos += [("Precio final", precio_final, precio_final, precio_final - precio)]
+
+        # Datos del gráfico
+        wf = pd.DataFrame(pasos, columns=["etapa", "inicio", "fin", "delta"])
+        wf["tipo"] = np.where(
+            wf.etapa.isin(["Precio actual", "Precio final"]),
+            "base", np.where(wf.delta >= 0, "sube", "baja")
+        )
+        wf["orden"] = range(len(wf))
+
+        y_min = int(np.floor((min(wf.inicio.min(), wf.fin.min()) - 15) / 10) * 10)
+        y_max = int(np.ceil((max(wf.inicio.max(), wf.fin.max()) + 10) / 10) * 10)
+
+        wf.loc[wf.tipo == "base", "inicio"] = y_min
+        wf["etiqueta"] = np.where(
+            wf.tipo == "base",
+            wf.fin.round().astype(int).astype(str) + " €",
+            wf.delta.map(lambda x: f"{x:+.0f} €")
+        )
+        wf["label_y"] = wf[["inicio", "fin"]].max(axis=1)
+
+        labels = wf.etapa.tolist()
+        expr = " : ".join(
+            [f"datum.value == {i} ? '{v}'" for i, v in enumerate(labels)]
+        ) + " : ''"
+
+        x = alt.X(
+            "orden:Q", title=None,
+            scale=alt.Scale(domain=[-0.5, len(wf) - 0.5], nice=False),
+            axis=alt.Axis(
+                values=list(range(len(wf))),
+                labelExpr=expr,
+                labelAngle=-20,
+                tickSize=0
+            )
+        )
+
+        # Barras
+        barras = alt.Chart(wf).mark_bar(size=42).encode(
+            x=x,
+            y=alt.Y(
+                "inicio:Q",
+                title="Precio por noche (€)",
+                scale=alt.Scale(domain=[y_min, y_max]),
+                axis=alt.Axis(
+                    values=list(range(y_min, y_max + 1, 20)),
+                    labelOverlap=False
+                )
+            ),
+            y2="fin:Q",
+            color=alt.Color(
+                "tipo:N",
+                scale=alt.Scale(
+                    domain=["base", "sube", "baja"],
+                    range=["#6B6560", "#C1483C", "#9B5C54"]
+                ),
+                legend=None
+            )
+        )
+
+        # Conectores
+        c = pd.DataFrame({
+            "x1": wf.orden.iloc[:-1] + .18,
+            "x2": wf.orden.iloc[1:].values - .18,
+            "y": wf.fin.iloc[:-1].values
+        })
+
+        lineas = alt.Chart(c).mark_rule(
+            color="#B8B2AD",
+            strokeDash=[4, 4]
+        ).encode(
+            x="x1:Q", x2="x2:Q", y="y:Q"
+        )
+
+        # Etiquetas
+        etiquetas = alt.Chart(wf).mark_text(
+            dy=-8, fontSize=11, fontWeight="bold"
+        ).encode(
+            x="orden:Q",
+            y="label_y:Q",
+            text="etiqueta:N"
+        )
+
+        st.altair_chart(
+            (barras + lineas + etiquetas).properties(height=300),
+            use_container_width=True
+        )
+
+        st.caption(
+            f"Del precio actual ({eur(precio)} €) al precio final "
+            f"({eur(precio_final)} €) con todas las mejoras. "
+            "Las diferencias reflejan asociaciones observadas en los datos, "
+            "no efectos causales."
+        )
+
 
 with tab_expl:
     st.subheader("Contribución de cada variable a tu precio")
@@ -402,55 +614,56 @@ with tab_expl:
 
         explainer = cargar_explainer()
         sv = explainer(X_input)
-
-        fig = plt.figure()
         sv.feature_names = [SHAP_LABELS.get(c, c) for c in X_input.columns]
-        shap.plots.waterfall(sv[0], max_display=14, show=False)
-        fig.canvas.draw()
-        ax = plt.gca()
-        labels = ax.get_yticklabels()
-        ax.set_yticklabels([
-    "variables adicionales" if "other features" in x.get_text() else x.get_text()
-    for x in labels
-])
-        st.pyplot(fig, clear_figure=True)
-       
+
+        shap.plots.waterfall(sv[0], max_display=12, show=False)
+
+        fig = plt.gcf()
+        fig.set_size_inches(10, 5)
+        ax = fig.gca()
+        ax.set_yticklabels(
+            [
+                "variables adicionales" if "other features" in t.get_text() else t.get_text()
+                for t in ax.get_yticklabels()
+            ]
+        )
+        ax.tick_params(labelsize=9)
+        fig.tight_layout()
+
+        izq, centro, der = st.columns([1, 10, 1])
+        with centro:
+            st.pyplot(fig, clear_figure=True)
 
         st.caption(
-            "Las contribuciones son aditivas sobre el log-precio: una barra de +0,20 "
-            "multiplica el precio por e^0,20 ≈ 1,22 (+22%)."
+            "Las contribuciones son aditivas sobre el logaritmo del precio: una barra "
+            "de +0,20 multiplica el precio por e^0,20 ≈ 1,22 (+22%)."
         )
     except Exception as e:
         st.warning(f"No se ha podido generar la explicación SHAP: {e}")
+
 
 with tab_mercado:
     st.subheader(f"Anuncios similares ({len(comparables)})")
 
     if len(comparables) >= 10:
         q = comparables["price_eur"].quantile([0.25, 0.5, 0.75])
-        c1, c2, c3, c4 = st.columns(4)
-
-        c1.metric("P25 del mercado", f"{eur(q[0.25])} €")
-        c2.metric("Mediana", f"{eur(q[0.5])} €")
-        c3.metric("P75", f"{eur(q[0.75])} €")
-        c4.metric(
-            "Tu posición",
-            f"{(comparables['price_eur'] < precio).mean() * 100:.0f}%"
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("P25 del mercado", f"{eur(q[0.25])} €")
+        m2.metric("Mediana", f"{eur(q[0.5])} €")
+        m3.metric("P75", f"{eur(q[0.75])} €")
+        m4.metric(
+            "Comparables por debajo",
+            f"{(comparables['price_eur'] < precio).mean() * 100:.0f}%",
         )
 
-        import altair as alt
+        conteo, bordes = np.histogram(comparables["price_eur"], bins=15)
+        hist = pd.DataFrame(
+            {"desde": bordes[:-1], "hasta": bordes[1:], "anuncios": conteo}
+        )
 
-        conteo, bordes = np.histogram(comparables["price_eur"], bins=18)
-
-        hist = pd.DataFrame({
-            "centro": (bordes[:-1] + bordes[1:]) / 2,
-            "desde": bordes[:-1],
-            "hasta": bordes[1:],
-            "anuncios": conteo,
-        })
-
-        barras = alt.Chart(hist).mark_bar().encode(
-            x=alt.X("centro:Q", title="Precio por noche (€)"),
+        barras_h = alt.Chart(hist).mark_bar(color="#9BB7C4").encode(
+            x=alt.X("desde:Q", bin="binned", title="Precio por noche (€)"),
+            x2="hasta:Q",
             y=alt.Y("anuncios:Q", title="Nº de anuncios"),
             tooltip=[
                 alt.Tooltip("desde:Q", title="Desde (€)", format=".0f"),
@@ -459,25 +672,23 @@ with tab_mercado:
             ],
         )
 
-        linea = alt.Chart(
-            pd.DataFrame({"x": [precio]})
-        ).mark_rule(strokeWidth=3).encode(x="x:Q")
+        linea = (
+            alt.Chart(pd.DataFrame({"x": [precio]}))
+            .mark_rule(color="#C1483C", strokeWidth=3)
+            .encode(x="x:Q")
+        )
 
         st.altair_chart(
-            (barras + linea).properties(height=280),
-            use_container_width=True
+            (barras_h + linea).properties(height=260), use_container_width=True
         )
-
-        st.caption(
-            f"La línea marca tu precio recomendado: {eur(precio)} €/noche."
-        )
-
+        st.caption(f"La línea marca tu precio recomendado: {eur(precio)} €/noche.")
     else:
         st.info(
             "Pocos anuncios similares con estos filtros. "
             "Amplía el número de huéspedes o elige «Resto de barrios»."
         )
-    filas = []
+
+    filas_mapa = []
     for nombre, col in BARRIOS.items():
         if col is None or nombre not in CENTROIDES:
             continue
@@ -485,46 +696,81 @@ with tab_mercado:
         if len(sub) < 15:
             continue
         lat_b, lon_b = CENTROIDES[nombre]
-        filas.append({"barrio": nombre, "lat": lat_b, "lon": lon_b,
-                      "mediana": int(round(sub["price_eur"].median())), "n": len(sub)})
+        filas_mapa.append(
+            {
+                "barrio": nombre,
+                "lat": lat_b,
+                "lon": lon_b,
+                "mediana": int(round(sub["price_eur"].median())),
+                "n": len(sub),
+            }
+        )
 
-    if filas:
-        mapa = pd.DataFrame(filas)
+    if filas_mapa:
+        mapa = pd.DataFrame(filas_mapa)
         lo, hi = mapa["mediana"].min(), mapa["mediana"].max()
         t = (mapa["mediana"] - lo) / max(hi - lo, 1)
         mapa["c"] = [[int(225 * v + 25), 70, int(225 * (1 - v) + 25), 190] for v in t]
         mapa["r"] = 200 + 500 * t
         mapa["etiqueta"] = mapa["mediana"].astype(str) + " €"
-        mapa["tip"] = (mapa["barrio"] + ": " + mapa["mediana"].astype(str)
-                       + " €/noche (" + mapa["n"].astype(str) + " anuncios)")
+        mapa["tip"] = (
+            mapa["barrio"]
+            + ": "
+            + mapa["mediana"].astype(str)
+            + " €/noche ("
+            + mapa["n"].astype(str)
+            + " anuncios)"
+        )
 
         st.subheader("Precio mediano por barrio")
-        st.pydeck_chart(pdk.Deck(
-            map_style="light",
-            initial_view_state=pdk.ViewState(latitude=41.392, longitude=2.168, zoom=12.1),
-            layers=[
-                pdk.Layer("ScatterplotLayer", mapa, get_position=["lon", "lat"],
-                          get_fill_color="c", get_radius="r", pickable=True),
-                pdk.Layer("TextLayer", mapa, get_position=["lon", "lat"],
-                          get_text="etiqueta", get_size=13, get_color=[255, 255, 255]),
-                pdk.Layer("ScatterplotLayer", pd.DataFrame([{"lat": lat, "lon": lon}]),
-                          get_position=["lon", "lat"], get_fill_color=[20, 20, 20],
-                          get_radius=140),
-            ],
-            tooltip={"text": "{tip}"},
-        ))
+        st.pydeck_chart(
+            pdk.Deck(
+                map_style="light",
+                initial_view_state=pdk.ViewState(
+                    latitude=41.392, longitude=2.168, zoom=12.1
+                ),
+                layers=[
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        mapa,
+                        get_position=["lon", "lat"],
+                        get_fill_color="c",
+                        get_radius="r",
+                        pickable=True,
+                    ),
+                    pdk.Layer(
+                        "TextLayer",
+                        mapa,
+                        get_position=["lon", "lat"],
+                        get_text="etiqueta",
+                        get_size=13,
+                        get_color=[255, 255, 255],
+                    ),
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        pd.DataFrame([{"lat": lat, "lon": lon}]),
+                        get_position=["lon", "lat"],
+                        get_fill_color=[20, 20, 20],
+                        get_radius=140,
+                    ),
+                ],
+                tooltip={"text": "{tip}"},
+            )
+        )
         st.caption(
             f"Círculo grande y rojo: barrio más caro. Pequeño y azul: más barato. "
             f"El número es el precio mediano por noche. Punto negro: tu alojamiento "
-            f"({precio:,.0f} €/noche estimado). Muestra de referencia: {len(ref):,} anuncios "
-            f"del conjunto de test (Inside Airbnb, marzo 2026)."
+            f"({eur(precio)} €/noche estimado). Muestra de referencia: {eur(len(ref))} "
+            f"anuncios del conjunto de test (Inside Airbnb, marzo 2026)."
         )
 
-with tab_modelo:
-    c1, c2 = st.columns([3, 2])
 
-    with c1:
-        st.markdown("""
+with tab_modelo:
+    d1, d2 = st.columns([3, 2])
+
+    with d1:
+        st.markdown(
+            """
         **¿Cómo funciona este modelo?**
 
         El precio se estima con un algoritmo de *gradient boosting* (XGBoost) entrenado
@@ -534,17 +780,20 @@ with tab_modelo:
 
         **¿Qué significa el R²?**
 
-        Indica qué proporción de la variación de precios entre anuncios consigue explicar
-        el modelo. En el conjunto de test, el modelo alcanza un R² de 0,878.
+        Indica qué proporción de la variación del precio (en escala logarítmica, que es
+        la variable sobre la que se entrena el modelo) consigue explicar. En el conjunto
+        de test alcanza un R² de 0,878, un valor alto para datos de mercado real.
 
         **¿Qué error cabe esperar?**
 
-        El error mediano absoluto es de aproximadamente 23 €, lo que significa que en
-        la mitad de los casos la estimación se desvía menos de esta cantidad respecto
-        al precio observado.
-        """)
+        El error mediano absoluto es de aproximadamente 23 €: en la mitad de los casos
+        la estimación se desvía menos de esa cantidad respecto al precio observado. La
+        diferencia con el error medio (50 €) indica que las desviaciones grandes se
+        concentran en un número reducido de alojamientos caros.
+        """
+        )
 
-    with c2:
+    with d2:
         st.metric("R² en test", f"{METRICAS['r2_test']:.3f}")
         st.metric("Error mediano", f"{eur(METRICAS['mediana_error_euros'])} €")
         st.metric("Error medio (MAE)", f"{eur(METRICAS['mae_euros'])} €")
