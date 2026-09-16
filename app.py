@@ -339,7 +339,7 @@ with st.expander("¿Cómo funciona?"):
     e3.markdown("Consulta qué factores influyen y cómo te comparas con anuncios similares.")
     st.caption(
         f"Datos: Inside Airbnb (Barcelona, marzo 2026) · "
-        f"R² en test: {METRICAS['r2_test']:.3f} · "
+        f"R² del modelo XGBoost en datos de prueba: {METRICAS['r2_test']:.3f} · "
         f"Error mediano: {METRICAS['mediana_error_euros']:.0f} €/noche. "
         "La herramienta es orientativa y no sustituye el criterio del anfitrión."
     )
@@ -350,13 +350,12 @@ with st.expander("¿Cómo funciona?"):
 with st.sidebar:
     st.header("Tu alojamiento")
     st.caption(
-        "Rellena solo lo básico. Todo lo demás parte de un **anuncio típico de "
-        "Barcelona** y puedes ajustarlo en 'Opciones avanzadas'."
-    )
+        "Rellena las características principales de tu alojamiento. "
+    "Puedes ajustar más detalles en 'Opciones avanzadas'.")
 
     barrio = st.selectbox("Barrio", list(BARRIOS.keys()))
 
-    tipo = st.selectbox("Tipo de propiedad", list(TIPOS.keys()))
+    tipo_habitacion = st.selectbox("Tipo de habitación", list(HABITACION.keys()))
 
     accommodates = slider_seguro(
         "Huéspedes", 1, LIM["huespedes_max"],
@@ -385,20 +384,19 @@ with st.sidebar:
         int(base("minimum_nights", 1, 30, 2, int))
     )
 
+    anuncio_nuevo = st.checkbox(
+    "Anuncio nuevo",
+    value=False,
+    help="Indica si el alojamiento es nuevo y todavía no tiene reseñas."
+)
     rating = st.slider(
     "Valoración global",
     1.0,
     5.0,
     float(base("rating", 1.0, 5.0, 4.61)),
     step=0.01,
+    disabled=anuncio_nuevo,
     help="Valoración media del alojamiento por parte de los huéspedes.",
-)
-
-    anuncio_nuevo = st.checkbox(
-    "Anuncio nuevo",
-    value=False,
-    help="Indica si el alojamiento es nuevo y todavía no tiene reseñas. "
-         "En ese caso, el modelo considera que no hay historial de reseñas."
 )
 
     with st.expander("⚙️ Opciones avanzadas (opcional)"):
@@ -419,10 +417,23 @@ with st.sidebar:
 def construir_fila(amenities_estado):
     fila = {v: float(DEF.get(v, 0.0)) for v in VARIABLES}
 
+    for v in VARIABLES:
+        if v.startswith(("room_type_", "property_type_agrupado_")):
+            fila[v] = 0.0
+
+    if tipo_habitacion == "Alojamiento entero":
+        fila["property_type_agrupado_Entire_rental_unit"] = 1.0
+    elif tipo_habitacion == "Habitación privada":
+        fila["property_type_agrupado_Private_room_in_rental_unit"] = 1.0
+
+    if HABITACION[tipo_habitacion]:
+        fila[HABITACION[tipo_habitacion]] = 1.0
+
     fila["accommodates"] = accommodates
     fila["bedrooms"] = bedrooms
     fila["bathrooms_num"] = bathrooms
     fila["minimum_nights"] = minimum_nights
+    
 
     fila["maximum_nights"] = float(DEF.get("maximum_nights", 365))
     fila["availability_eoy"] = float(DEF.get("availability_eoy", 207))
@@ -438,8 +449,8 @@ def construir_fila(amenities_estado):
     )
     fila["antiguedad_anuncio"] = MEDIANA_ANTIG_DIAS
 
-    # Barrio y tipo de propiedad
-    for col in (BARRIOS[barrio], TIPOS[tipo]):
+    # Barrio y tipo de habitación
+    for col in (BARRIOS[barrio], HABITACION[tipo_habitacion]):
         if col:
             fila[col] = 1.0
 
@@ -570,7 +581,7 @@ with tab_precio:
             st.caption("Barcelona")
 
             p1, p2, p3, p4 = st.columns(4)
-            p1.markdown(f"🏠  {tipo}")
+            p1.markdown(f"🏠  {tipo_habitacion}")
             p2.markdown(f"🛏  {bedrooms} habitaci{'ón' if bedrooms == 1 else 'ones'}")
             p3.markdown(f"🛀  {bathrooms:g} baño{'s' if bathrooms != 1 else ''}")
             p4.markdown(f"👥  {accommodates} huésped{'' if accommodates == 1 else 'es'}")
@@ -587,254 +598,351 @@ with tab_precio:
 
 
 
-
-        #SHAP
-        
 with tab_expl:
-    st.markdown("### Factores que influyen en tu precio")
-    st.markdown(
-    "El modelo analiza las características de tu alojamiento y estima "
-    "cómo cada una contribuye a la predicción final."
-)
+    #SHAP
 
-    with st.expander("ℹ️ ¿Cómo interpretar el gráfico?"):
-        st.markdown("""
-        - 🟢 **Verde:** la característica empuja la predicción hacia un precio más alto.
-        - 🔴 **Rojo:** la característica empuja la predicción hacia un precio más bajo.
-        - **Cuanto más larga sea la barra, mayor es su contribución** a esta predicción.
-        - Los valores están expresados en la **escala logarítmica del modelo**, no en euros.
-        
-        **Importante:** estas contribuciones representan asociaciones aprendidas por
-        el modelo y no efectos causales.
-        """)
     try:
-            import shap
-            @st.cache_resource
-            def cargar_explainer():
-                return shap.TreeExplainer(modelo)
-            explainer = cargar_explainer()
-            sv = explainer(X_input)
-            vals = sv.values[0]
-            names = [SHAP_LABELS.get(c, c) for c in X_input.columns]
-            data = pd.DataFrame({
-                "variable": names,
-                "valor": X_input.iloc[0].values,
-                "shap": vals
-            })
-            data["abs"] = data["shap"].abs()
-            data = data.nlargest(10, "abs").sort_values("shap")
+                    import shap
+                    @st.cache_resource
+                    def cargar_explainer():
+                        return shap.TreeExplainer(modelo)
+                    explainer = cargar_explainer()
+                    sv = explainer(X_input)
+                    vals = sv.values[0]
+                    names = [SHAP_LABELS.get(c, c) for c in X_input.columns]
+                    data = pd.DataFrame({
+                        "variable": names,
+                        "valor": X_input.iloc[0].values,
+                        "shap": vals
+                    })
+                    data["efecto_pct"] = (np.exp(data["shap"]) - 1) * 100
+                    data["abs"] = data["shap"].abs()
+                    data = data.nlargest(10, "abs").sort_values("efecto_pct")
 
-            def valor_texto(row):
-                v = row["valor"]
-                if row["variable"] == "Noches mínimas":
-                    return f"Noches mínimas · {v:.0f}"
-                if row["variable"] == "Huéspedes":
-                    return f"Huéspedes · {v:.0f}"
-                if row["variable"] == "Habitaciones":
-                    return f"Habitaciones · {v:.0f}"
-                if row["variable"] == "Número de baños":
-                    return f"Número de baños · {v:.1f}"
-                if row["variable"] == "Reseñas últimos 12 meses":
-                    return f"Reseñas últimos 12 meses · {v:.0f}"
-                if "Distancia" in row["variable"]:
-                    return f"{row['variable']} · {v:.2f} km"
-                return row["variable"]
-            data["label"] = data.apply(valor_texto, axis=1)
-            data["efecto"] = np.where(data["shap"] >= 0, "Aumenta", "Reduce")
+                    def valor_texto(row):
+                        v = row["valor"]
+                        variable = row["variable"]
 
-            st.markdown(f"### Precio recomendado: **{eur(precio)} €/noche**")
+                        if variable == "Lavavajillas":
+                            return "Lavavajillas: Sí" if v == 1 else "Lavavajillas: No"
 
-            st.markdown(
-            "🟢 **Aumenta la estimación** · 🔴 **Reduce la estimación**"
-        )
+                        if variable == "Baño compartido":
+                            return "Baño compartido: Sí" if v == 1 else "Baño compartido: No"
 
-            st.caption("La longitud de cada barra muestra cuánto contribuye cada característica "
-            "a la predicción. Los valores están en la escala logarítmica del modelo, "
-            "**no en euros**.")
+                        if variable == "Habitación privada":
+                            return "Habitación privada: Sí" if v == 1 else "Habitación privada: No"
 
-            chart = (
-                alt.Chart(data)
-                .mark_bar()
-                .encode(
-                    y=alt.Y(
-                        "label:N",
-                        sort=data["label"].tolist(),
-                        title=None,
-                        axis=alt.Axis(labelLimit=500, labelFontSize=13)
-                    ),
-                    x=alt.X(
-                        "shap:Q",
-                        title="Contribución a la predicción (escala logarítmica)",
-                        axis=alt.Axis(format=".2f")
-                    ),
-                    color=alt.Color(
-                        "efecto:N",
-                        scale=alt.Scale(
-                            domain=["Aumenta", "Reduce"],
-                            range=["#2E8B57", "#C84A3D"]
-                        ),
-                        legend=alt.Legend(title=None)
-                    ),
-                    tooltip=[
-                        alt.Tooltip("label:N", title="Característica"),
-                        alt.Tooltip("shap:Q", title="Contribución", format=".2f"),
-                        alt.Tooltip("efecto:N", title="Efecto")
-                    ]
+                        if variable == "Aire acondicionado":
+                            return "Aire acondicionado: Sí" if v == 1 else "Aire acondicionado: No"
+                        if variable == "Ascensor":
+                            return "Ascensor: Sí" if v == 1 else "Ascensor: No"
+
+                        if variable == "Licencia registrada":
+                            return "Licencia registrada: Sí" if v == 1 else "Licencia registrada: No"
+
+                        if variable == "Anuncios gestionados por el anfitrión":
+                            return f"Anuncios gestionados por el anfitrión: {v:.0f}"
+
+                        if variable == "Noches mínimas":
+                            return f"Noches mínimas: {v:.0f}"
+                        if variable == "Huéspedes":
+                            return f"Huéspedes: {v:.0f}"
+                        if variable == "Habitaciones":
+                            return f"Habitaciones: {v:.0f}"
+                        if variable == "Número de baños":
+                            return f"Baños: {v:g}"
+                        if variable == "Reseñas últimos 12 meses":
+                            return f"Reseñas últimos 12 meses: {v:.0f}"
+                        if "Distancia" in variable:
+                            return f"{variable.replace(' (km)', '')}: {v:.1f} km"
+
+                        return variable
+
+                    data["label"] = data.apply(valor_texto, axis=1)
+                    data["efecto"] = np.where(data["efecto_pct"] >= 0, "Aumenta", "Reduce")
+
+                    st.markdown(f"### Precio recomendado: **{eur(precio)} €/noche**")
+
+                    st.markdown(
+                    "🟢 **Aumenta la estimación** · 🔴 **Reduce la estimación**"
                 )
-            )
 
-            cero = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(
-                color="#555555"
-            ).encode(x="x:Q")
+                    st.caption("Cada barra indica en qué porcentaje aproximado sube o baja el precio por esa característica.")
 
-            st.altair_chart(
-                (chart + cero).properties(height=330),
-                use_container_width=True
-            )
+                    chart = (
+                        alt.Chart(data)
+                        .mark_bar()
+                        .encode(
+                            y=alt.Y(
+                                "label:N",
+                                sort=data["label"].tolist(),
+                                title=None,
+                                axis=alt.Axis(labelLimit=500, labelFontSize=13)
+                            ),
+                            x=alt.X("efecto_pct:Q",title="Efecto aproximado sobre el precio (%)",axis=alt.Axis(format="+.0f")),
+                            color=alt.Color(
+                                "efecto:N",
+                                scale=alt.Scale(
+                                    domain=["Aumenta", "Reduce"],
+                                    range=["#2E8B57", "#C84A3D"]
+                                ),
+                                legend=alt.Legend(title=None)
+                            ),
+                            tooltip=[
+                                alt.Tooltip("label:N", title="Característica"),
+                                alt.Tooltip("efecto_pct:Q", title="Efecto aproximado", format="+.1f"),
+                                alt.Tooltip("efecto:N", title="Efecto")
+                            ]
+                        )
+                    )
 
-            st.markdown("#### 💡 ¿Qué significa esto para ti?")
+                    cero = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(
+                        color="#555555"
+                    ).encode(x="x:Q")
 
-            positivos = data[data["shap"] > 0].sort_values("shap", ascending=False)
-            negativos = data[data["shap"] < 0].sort_values("shap")
+                    st.altair_chart(
+                        (chart + cero).properties(height=330),
+                        use_container_width=True
+                    )
 
-            if len(positivos) and len(negativos):
-                st.info(
-                f"En este alojamiento, **{positivos.iloc[0]['label']}** es el factor "
-                f"que más impulsa la estimación del precio. " 
-                f"**{negativos.iloc[0]['label']}** es el que más la reduce."
-            )
+                    st.markdown("#### 💡 ¿Qué significa esto para ti?")
+                    positivos = data[data["shap"] > 0].sort_values("shap", ascending=False)
+                    negativos = data[data["shap"] < 0].sort_values("shap")
 
-            st.caption(
-            "Las contribuciones representan asociaciones aprendidas por el modelo "
+                    if len(positivos) and len(negativos):
+                        st.info(f'La característica que más contribuye a un precio recomendado más alto es '
+            f'**{positivos.iloc[0]["label"]}** (**+{positivos.iloc[0]["efecto_pct"]:.0f}%**). '
+            f'La que más contribuye a reducirlo es '
+            f'**{negativos.iloc[0]["label"]}** (**{negativos.iloc[0]["efecto_pct"]:.0f}%**).'
+        )
+                    st.caption("Las contribuciones SHAP muestran asociaciones aprendidas por el modelo "
             "y no deben interpretarse como efectos causales.")
-
     except Exception as e:
         st.warning(f"No se ha podido generar la explicación SHAP: {e}")
-            
-
+                
 
 with tab_mercado:
     st.subheader(f"Anuncios similares ({len(comparables)})")
 
     if len(comparables) >= 10:
         q = comparables["price_eur"].quantile([0.25, 0.5, 0.75])
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("P25 del mercado", f"{eur(q[0.25])} €")
-        m2.metric("Mediana", f"{eur(q[0.5])} €")
-        m3.metric("P75", f"{eur(q[0.75])} €")
-        m4.metric(
-            "Comparables por debajo",
-            f"{(comparables['price_eur'] < precio).mean() * 100:.0f}%",
-        )
 
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Percentil 25",
+            f"{eur(q[0.25])} €",
+            help="El 25 % de los anuncios similares cuesta menos que este precio. Es la parte baja del mercado.",)
+
+        m2.metric("Mediana",
+            f"{eur(q[0.5])} €",
+            help="La mitad de los anuncios similares cuesta menos y la otra mitad más.",)
+
+        m3.metric("Percentil 75",
+            f"{eur(q[0.75])} €",
+            help="El 75 % de los anuncios similares cuesta menos que este precio. Solo el 25 % más caro lo supera.",)
+        m4.metric("Comparables por debajo",
+    f"{(comparables['price_eur'] < precio).mean() * 100:.0f}%",
+    help="Anuncios similares con un precio inferior al recomendado.")
+                
+
+        
+##histogram
         conteo, bordes = np.histogram(comparables["price_eur"], bins=15)
-        hist = pd.DataFrame(
-            {"desde": bordes[:-1], "hasta": bordes[1:], "anuncios": conteo}
-        )
+        hist = pd.DataFrame({
+        "desde": bordes[:-1],
+        "hasta": bordes[1:],
+        "anuncios": conteo
+    })
+
+        y_top = int(conteo.max())
+        mediana_c = float(q[0.5])
+        
 
         barras_h = alt.Chart(hist).mark_bar(color="#9BB7C4").encode(
-            x=alt.X("desde:Q", bin="binned", title="Precio por noche (€)"),
+            x=alt.X(
+                "desde:Q",
+                bin="binned",
+                title="Precio por noche (€)",
+                axis=alt.Axis(tickCount=10, format=".0f", labelFontSize=12)
+            ),
             x2="hasta:Q",
-            y=alt.Y("anuncios:Q", title="Nº de anuncios"),
+            y=alt.Y(
+                "anuncios:Q",
+                title="Nº de anuncios",
+                scale=alt.Scale(domain=[0, y_top * 1.25]),
+                axis=alt.Axis(tickMinStep=1, format=".0f")
+            ),
             tooltip=[
                 alt.Tooltip("desde:Q", title="Desde (€)", format=".0f"),
                 alt.Tooltip("hasta:Q", title="Hasta (€)", format=".0f"),
-                alt.Tooltip("anuncios:Q", title="Anuncios"),
+                alt.Tooltip("anuncios:Q", title="Anuncios")
+            ]
+        )
+        ref_lineas = pd.DataFrame({
+            "x": [precio, mediana_c],
+            "tipo": ["Tu precio", "Mediana"],
+            "texto": [
+                f"Tu precio: {eur(precio)} €",
+                f"Mediana: {eur(mediana_c)} €"
             ],
-        )
+            "y": [y_top * 1.18, y_top * 1.06]
+        })
+        linea_precio = alt.Chart(ref_lineas[ref_lineas.tipo == "Tu precio"]).mark_rule(
+            color="#C1483C",strokeWidth=3).encode(x="x:Q")
+        linea_mediana = alt.Chart(ref_lineas[ref_lineas.tipo == "Mediana"]).mark_rule(
+                                                                                color="#555555",
+                                                                                strokeWidth=2,
+                                                                                strokeDash=[6, 4]
+                                                                            ).encode(x="x:Q")
 
-        linea = (
-            alt.Chart(pd.DataFrame({"x": [precio]}))
-            .mark_rule(color="#C1483C", strokeWidth=3)
-            .encode(x="x:Q")
-        )
+        x_max = float(bordes[-1])
 
-        st.altair_chart(
-            (barras_h + linea).properties(height=260), width="stretch"
-        )
-        st.caption(f"La línea vertical indica el precio recomendado por el modelo para tu alojamiento.")
-    else:
-        st.info(
-            "Pocos anuncios similares con estos filtros. "
-            "Amplía el número de huéspedes o elige «Resto de barrios»."
-        )
+        def etiqueta_linea(fila, color):
+            a_la_derecha = fila["x"] < bordes[0] + 0.75 * (x_max - bordes[0])
+            return alt.Chart(pd.DataFrame([fila])).mark_text(
+                align="left" if a_la_derecha else "right",
+                dx=8 if a_la_derecha else -8,
+                fontSize=14,
+                fontWeight="bold",
+                color=color
+            ).encode(
+                x="x:Q",
+                y="y:Q",
+                text="texto:N"
+            )
+
+        et_precio = etiqueta_linea(ref_lineas.iloc[0].to_dict(), "#C1483C")
+        et_mediana = etiqueta_linea(ref_lineas.iloc[1].to_dict(), "#555555")
+
+        st.altair_chart((barras_h + linea_mediana + linea_precio + et_mediana + et_precio).properties(height=300), width="stretch")
+
+        
+
+##mapa
 
     filas_mapa = []
+
     for nombre, col in BARRIOS.items():
         if col is None or nombre not in CENTROIDES:
             continue
+
         sub = ref[ref[col] == 1]
         if len(sub) < 15:
             continue
+
         lat_b, lon_b = CENTROIDES[nombre]
-        filas_mapa.append(
-            {
-                "barrio": nombre,
-                "lat": lat_b,
-                "lon": lon_b,
-                "mediana": int(round(sub["price_eur"].median())),
-                "n": len(sub),
-            }
-        )
+        filas_mapa.append({
+            "barrio": nombre,
+            "lat": lat_b,
+            "lon": lon_b,
+            "mediana": int(round(sub["price_eur"].median())),
+            "n": len(sub)
+        })
 
     if filas_mapa:
         mapa = pd.DataFrame(filas_mapa)
         lo, hi = mapa["mediana"].min(), mapa["mediana"].max()
         t = (mapa["mediana"] - lo) / max(hi - lo, 1)
-        mapa["c"] = [[int(225 * v + 25), 70, int(225 * (1 - v) + 25), 190] for v in t]
-        mapa["r"] = 200 + 500 * t
+
+        mapa["c"] = [
+            [int(60 + 170*v), int(110 - 50*v), int(200 - 150*v), 205]
+            for v in t
+        ]
+        mapa["r"] =   200 + 500 * t
         mapa["etiqueta"] = mapa["mediana"].astype(str) + " €"
         mapa["tip"] = (
-            mapa["barrio"]
-            + ": "
-            + mapa["mediana"].astype(str)
-            + " €/noche ("
-            + mapa["n"].astype(str)
-            + " anuncios)"
+            mapa["barrio"] + ": " + mapa["mediana"].astype(str)
+            + " €/noche (" + mapa["n"].astype(str) + " anuncios)"
         )
 
+        es_tuyo = mapa["barrio"] == barrio
+        mapa["borde"] = [
+            [25, 25, 25, 255] if x else [255, 255, 255, 230]
+            for x in es_tuyo
+        ]
+        mapa["ancho_borde"] = np.where(es_tuyo, 70, 25)
+
         st.subheader("Precio mediano por barrio")
-        lat, lon = CENTROIDES[barrio]
+
+        capas = [
+            pdk.Layer(
+                "ScatterplotLayer", mapa,
+                get_position=["lon", "lat"],
+                get_fill_color="c",
+                get_radius="r",
+                stroked=True,
+                get_line_color="borde",
+                get_line_width="ancho_borde",
+                pickable=True
+            ),
+            pdk.Layer(
+                "TextLayer", mapa,
+                get_position=["lon", "lat"],
+                get_text="etiqueta",
+                get_size=14,
+                get_color=[255, 255, 255, 255],
+                get_text_anchor="'middle'",
+                get_alignment_baseline="'center'",
+                font_weight=700,
+                font_settings={"sdf": True},
+                outline_width=3,
+                outline_color=[0, 0, 0, 140]
+            )
+        ]
+
+        if es_tuyo.any():
+            tuyo = mapa[es_tuyo].copy()
+            tuyo["texto"] = "Tu barrio"
+            tuyo["lat_texto"] = tuyo["lat"] + 0.0045
+
+            capas.append(
+                pdk.Layer(
+                    "TextLayer", tuyo,
+                    get_position=["lon", "lat_texto"],
+                    get_text="texto",
+                    get_size=13,
+                    get_color=[25, 25, 25, 255],
+                    get_text_anchor="'middle'",
+                    get_alignment_baseline="'bottom'",
+                    font_weight=700,
+                    font_settings={"sdf": True},
+                    outline_width=4,
+                    outline_color=[255, 255, 255, 230]
+                )
+            )
+        else:
+            lat_u, lon_u = CENTROIDES[barrio]
+            capas.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    pd.DataFrame([{"lat": lat_u, "lon": lon_u}]),
+                    get_position=["lon", "lat"],
+                    get_fill_color=[255, 255, 255, 255],
+                    get_line_color=[25, 25, 25, 255],
+                    stroked=True,
+                    get_line_width=40,
+                    get_radius=90
+                )
+            )
+
         st.pydeck_chart(
             pdk.Deck(
                 map_style="light",
                 initial_view_state=pdk.ViewState(
-                    latitude=41.392, longitude=2.168, zoom=12.1
+                    latitude=41.391, longitude=2.165, zoom=12.3
                 ),
-                layers=[
-                    pdk.Layer(
-                        "ScatterplotLayer",
-                        mapa,
-                        get_position=["lon", "lat"],
-                        get_fill_color="c",
-                        get_radius="r",
-                        pickable=True,
-                    ),
-                    pdk.Layer(
-                        "TextLayer",
-                        mapa,
-                        get_position=["lon", "lat"],
-                        get_text="etiqueta",
-                        get_size=13,
-                        get_color=[255, 255, 255],
-                    ),
-                    pdk.Layer(
-                        "ScatterplotLayer",
-                        pd.DataFrame([{"lat": lat, "lon": lon}]),
-                        get_position=["lon", "lat"],
-                        get_fill_color=[20, 20, 20],
-                        get_radius=140,
-                    ),
-                ],
-                tooltip={"text": "{tip}"},
+                layers=capas,
+                tooltip={"text": "{tip}"}
             )
         )
+
         st.caption(
-            f"Círculo grande y rojo: barrio más caro. Pequeño y azul: más barato. "
-            f"El número es el precio mediano por noche. Punto negro: tu alojamiento "
-            f"({eur(precio)} €/noche estimado). Muestra de referencia: {eur(len(ref))} "
-            f"anuncios del conjunto de test (Inside Airbnb, marzo 2026)."
-        )
+            "Azul: barrios más baratos · Rojo: más caros. "
+            "El número es el precio mediano por noche y el borde oscuro marca "
+            "**tu barrio**. Pasa el ratón por un círculo para ver el número "
+            "de anuncios. Muestra de referencia: "
+            f"{eur(len(ref))} anuncios del conjunto de test "
+            "(Inside Airbnb, marzo 2026)."
+    )
 
 # modelo
 
@@ -862,12 +970,10 @@ with tab_modelo:
     )
 
     st.markdown("### ¿Cómo funciona este modelo?")
-    st.markdown(
-        "El precio se estima con un algoritmo de **gradient boosting (XGBoost)**, "
-        "seleccionado tras comparar distintos modelos de aprendizaje automático. "
-        "El modelo utiliza las características del alojamiento para generar una estimación "
-        "del precio por noche."
-    )
+    st.markdown("El precio se estima mediante un algoritmo de **gradient boosting (XGBoost)**, "
+    "entrenado por el **equipo del proyecto** con información de marzo de 2026 obtenida de **Inside Airbnb**. "
+    "El modelo utiliza las características del alojamiento para generar una estimación "
+    "del precio por noche.")
 # Sobre este proyecto
 
     st.divider()
