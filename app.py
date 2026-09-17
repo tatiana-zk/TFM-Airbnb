@@ -154,15 +154,9 @@ MEDIANA_ANTIG_DIAS = float(DEF.get("antiguedad_anuncio", 1262.5))
 
 # Límites coherentes con los datos de entrenamiento (Inside Airbnb, 21-mar-2026)
 LIM = {
-    "huespedes_max": 10,          # accommodates winsorizado a 9,5
     "hab_max": 6,
     "banos_max": 4.0,
-    "resenas_ltm_max": 60,        # winsorizado a 60
-    "anuncios_max": 110,          # calculated_host_listings_count winsorizado a 110,5
-    "host_meses_max": 182,        # máximo observado de antiguedad_como_host
-    "dias_hasta_fin_anio": 285,   # del 21-mar al 31-dic (fecha del scraping)
 }
-LAT_MIN, LAT_MAX, LON_MIN, LON_MAX = 41.32, 41.47, 2.05, 2.23  # término municipal aprox.
 
 
 def slider_seguro(label, lo, hi, valor, step=1, **kw):
@@ -245,12 +239,6 @@ CENTROIDES = {
     "Resto de barrios": (41.3900, 2.1600),
 }
 
-TIPOS = {
-    "Vivienda entera": "property_type_agrupado_Entire_rental_unit",
-    "Habitación privada en vivienda": "property_type_agrupado_Private_room_in_rental_unit",
-    "Habitación de hotel": "property_type_agrupado_Room_in_hotel",
-    "Otros": "property_type_agrupado_Otros",
-}
 
 HABITACION = {
     "Alojamiento entero": None,
@@ -259,9 +247,8 @@ HABITACION = {
 }
 
 LICENCIA = {
-    "Licencia registrada (HUT)": "licencia_estado_Licencia_registrada",
-    "Sin dato": "licencia_estado_Sin_dato",
-    "Exenta / otra situación": None,
+    "Licencia registrada": "licencia_estado_Licencia_registrada",
+    "No indicada en el anuncio": "licencia_estado_Sin_dato",
 }
 
 AMENITIES = {
@@ -357,32 +344,34 @@ with st.sidebar:
 
     tipo_habitacion = st.selectbox("Tipo de habitación", list(HABITACION.keys()))
 
+    huespedes_max = {
+    "Alojamiento entero": 8,
+    "Habitación privada": 3,
+    "Habitación compartida": 8,}[tipo_habitacion]
     accommodates = slider_seguro(
-        "Huéspedes", 1, LIM["huespedes_max"],
-        int(base("accommodates", 1, LIM["huespedes_max"], 4, int))
-    )
+    "Huéspedes", 1, huespedes_max,
+    min(int(base("accommodates", 1, huespedes_max, 4, int)), huespedes_max))
 
-    bedrooms = slider_seguro(
-        "Habitaciones", 1, LIM["hab_max"],
-        int(base("bedrooms", 1, LIM["hab_max"], 2, int))
-    )
+    hab_max = 1 if tipo_habitacion != "Alojamiento entero" else min(LIM["hab_max"], accommodates)
+    bedrooms = slider_seguro("Habitaciones", 1, hab_max,
+    min(int(base("bedrooms", 1, hab_max, 2, int)), hab_max))
 
+    banos_max = float(min(LIM["banos_max"], bedrooms + 1))
     bathrooms = slider_seguro(
-        "Baños", 0.5, LIM["banos_max"],
-        base("bathrooms_num", 0.5, LIM["banos_max"], 1.0),
-        step=0.5
-    )
+    "Baños", 0.5, banos_max,
+    min(base("bathrooms_num", 0.5, banos_max, 1.0), banos_max),
+    step=0.5)
 
     shared_bath = st.checkbox(
     "Baño compartido",
-    value=base_bool("shared_bath", False),
-    help="Indica si el baño es compartido con otros huéspedes.",
-)
+    value=False if tipo_habitacion == "Alojamiento entero" else base_bool("shared_bathroom_True", False),
+    disabled=tipo_habitacion == "Alojamiento entero",
+    help="Indica si el baño es compartido con otros huéspedes.",)
+    
 
     minimum_nights = slider_seguro(
         "Noches mínimas", 1, 30,
-        int(base("minimum_nights", 1, 30, 2, int))
-    )
+        int(base("minimum_nights", 1, 30, 2, int)))
 
     anuncio_nuevo = st.checkbox(
     "Anuncio nuevo",
@@ -390,16 +379,18 @@ with st.sidebar:
     help="Indica si el alojamiento es nuevo y todavía no tiene reseñas."
 )
     rating = st.slider(
-    "Valoración global",
-    1.0,
-    5.0,
-    float(base("rating", 1.0, 5.0, 4.61)),
+    "Valoración global", 1.0, 5.0,
+    base("review_scores_rating", 1.0, 5.0, 4.61),
     step=0.01,
     disabled=anuncio_nuevo,
     help="Valoración media del alojamiento por parte de los huéspedes.",
 )
 
     with st.expander("⚙️ Opciones avanzadas (opcional)"):
+        st.markdown("**Licencia**")
+    
+        licencia = st.selectbox("Situación de licencia",list(LICENCIA),)
+
         st.markdown("**Servicios**")
 
         amenities_sel = {
@@ -418,13 +409,19 @@ def construir_fila(amenities_estado):
     fila = {v: float(DEF.get(v, 0.0)) for v in VARIABLES}
 
     for v in VARIABLES:
-        if v.startswith(("room_type_", "property_type_agrupado_")):
+        if v.startswith(("room_type_",
+        "property_type_agrupado_",
+        "neighbourhood_agrupado_",
+        "licencia_estado_",)):
             fila[v] = 0.0
+    PROPIEDAD = {
+        "Alojamiento entero": "property_type_agrupado_Entire_rental_unit",
+        "Habitación privada": "property_type_agrupado_Private_room_in_rental_unit",
+        "Habitación compartida": None,
+    }
+    if PROPIEDAD[tipo_habitacion]:
+        fila[PROPIEDAD[tipo_habitacion]] = 1.0
 
-    if tipo_habitacion == "Alojamiento entero":
-        fila["property_type_agrupado_Entire_rental_unit"] = 1.0
-    elif tipo_habitacion == "Habitación privada":
-        fila["property_type_agrupado_Private_room_in_rental_unit"] = 1.0
 
     if HABITACION[tipo_habitacion]:
         fila[HABITACION[tipo_habitacion]] = 1.0
@@ -441,16 +438,15 @@ def construir_fila(amenities_estado):
     fila["review_scores_rating"] = rating
     fila["review_scores_location"] = float(DEF.get("review_scores_location", 4.78))
 
-    fila["calculated_host_listings_count"] = float(
-        DEF.get("calculated_host_listings_count", 12)
-    )
+    fila["calculated_host_listings_count"] = float(DEF.get("calculated_host_listings_count", 12))
+
     fila["antiguedad_como_host"] = float(
         DEF.get("antiguedad_como_host", 98.61)
     )
     fila["antiguedad_anuncio"] = MEDIANA_ANTIG_DIAS
 
     # Barrio y tipo de habitación
-    for col in (BARRIOS[barrio], HABITACION[tipo_habitacion]):
+    for col in (BARRIOS[barrio], HABITACION[tipo_habitacion], LICENCIA[licencia]):
         if col:
             fila[col] = 1.0
 
@@ -474,10 +470,9 @@ def construir_fila(amenities_estado):
     fila["tiene_biografia_True"] = float(DEF.get("tiene_biografia_True", 1))
     fila["tiene_descripcion_True"] = float(DEF.get("tiene_descripcion_True", 1))
     fila["host_has_profile_pic_True"] = float(DEF.get("host_has_profile_pic_True", 1))
-    fila["host_location_agrupado_Desconocido"] = float(
-        DEF.get("host_location_agrupado_Desconocido", 0)
-    )
+    fila["host_location_agrupado_Desconocido"] = float(DEF.get("host_location_agrupado_Desconocido", 0))
     fila["es_gran_tenedor_True"] = float(DEF.get("es_gran_tenedor_True", 1))
+    
     fila["has_availability_True"] = float(DEF.get("has_availability_True", 1))
 
     # Distancias derivadas del barrio
@@ -506,20 +501,45 @@ banda_alta = float(np.exp(pred_log + RMSE_LOG))
 
 
 #comparables de mercado
+
 col_barrio = BARRIOS[barrio]
-comparables = ref.copy()
+comparables_base = ref.copy()
+
 if col_barrio:
-    comparables = comparables[comparables[col_barrio] == 1]
-else:  # resto: anuncios que no están en ninguno de los barrios con variable propia
-    cols_b = [c for c in BARRIOS.values() if c and c in comparables.columns]
-    comparables = comparables[comparables[cols_b].sum(axis=1) == 0]
-acc_ref = min(accommodates, 9.5)  # accommodates se winsorizó a 9,5 en entrenamiento
-comparables = comparables[
-    comparables["accommodates"].between(acc_ref - 1, acc_ref + 1)
+    comparables_base = comparables_base[
+        comparables_base[col_barrio] == 1
+    ]
+else:
+    cols_b = [c for c in BARRIOS.values() if c and c in comparables_base.columns]
+    comparables_base = comparables_base[
+        comparables_base[cols_b].sum(axis=1) == 0
+    ]
+
+acc_ref = min(accommodates, 9.5)
+comparables_base = comparables_base[
+    comparables_base["accommodates"].between(acc_ref - 1, acc_ref + 1)
 ]
 
+# Primero: mismo tipo de habitación
+col_room = HABITACION[tipo_habitacion]
+
+if col_room:
+    comparables = comparables_base[
+        comparables_base[col_room] == 1
+    ]
+else:
+    comparables = comparables_base[
+        (comparables_base["room_type_Private_room"] == 0)
+        & (comparables_base["room_type_Shared_room"] == 0)
+    ]
+
+# Si hay menos de 10, se amplía a todos los tipos de habitación
+if len(comparables) < 10:
+    comparables = comparables_base.copy()
+
 mediana_mercado = (
-    float(comparables["price_eur"].median()) if len(comparables) >= 10 else None
+    float(comparables["price_eur"].median())
+    if len(comparables) >= 10 else None
 )
 
 
@@ -667,7 +687,7 @@ with tab_expl:
                     "🟢 **Aumenta la estimación** · 🔴 **Reduce la estimación**"
                 )
 
-                    st.caption("Cada barra indica en qué porcentaje aproximado sube o baja el precio por esa característica.")
+                    st.caption("Cada barra representa la contribución aproximada de esa característica a esta predicción respecto al valor base del modelo")
 
                     chart = (
                         alt.Chart(data)
@@ -702,7 +722,7 @@ with tab_expl:
 
                     st.altair_chart(
                         (chart + cero).properties(height=330),
-                        use_container_width=True
+                        width="stretch"
                     )
 
                     st.markdown("#### 💡 ¿Qué significa esto para ti?")
@@ -742,6 +762,7 @@ with tab_mercado:
         m4.metric("Comparables por debajo",
     f"{(comparables['price_eur'] < precio).mean() * 100:.0f}%",
     help="Anuncios similares con un precio inferior al recomendado.")
+    
                 
 
         
@@ -814,6 +835,8 @@ with tab_mercado:
         et_mediana = etiqueta_linea(ref_lineas.iloc[1].to_dict(), "#555555")
 
         st.altair_chart((barras_h + linea_mediana + linea_precio + et_mediana + et_precio).properties(height=300), width="stretch")
+    else:
+        st.info("Pocos anuncios similares con estos filtros.")
 
         
 
@@ -890,25 +913,7 @@ with tab_mercado:
         ]
 
         if es_tuyo.any():
-            tuyo = mapa[es_tuyo].copy()
-            tuyo["texto"] = "Tu barrio"
-            tuyo["lat_texto"] = tuyo["lat"] + 0.0045
-
-            capas.append(
-                pdk.Layer(
-                    "TextLayer", tuyo,
-                    get_position=["lon", "lat_texto"],
-                    get_text="texto",
-                    get_size=13,
-                    get_color=[25, 25, 25, 255],
-                    get_text_anchor="'middle'",
-                    get_alignment_baseline="'bottom'",
-                    font_weight=700,
-                    font_settings={"sdf": True},
-                    outline_width=4,
-                    outline_color=[255, 255, 255, 230]
-                )
-            )
+            pass
         else:
             lat_u, lon_u = CENTROIDES[barrio]
             capas.append(
@@ -939,10 +944,7 @@ with tab_mercado:
             "Azul: barrios más baratos · Rojo: más caros. "
             "El número es el precio mediano por noche y el borde oscuro marca "
             "**tu barrio**. Pasa el ratón por un círculo para ver el número "
-            "de anuncios. Muestra de referencia: "
-            f"{eur(len(ref))} anuncios del conjunto de test "
-            "(Inside Airbnb, marzo 2026)."
-    )
+            "de anuncios." )
 
 # modelo
 
