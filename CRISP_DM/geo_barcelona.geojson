@@ -1,0 +1,12 @@
+{
+"type": "FeatureCollection",
+"name": "geo_barcelona",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::25831" } },
+"features": [
+{ "type": "Feature", "properties": { "index": "dist_center_km", "address": "Barcelona-Plaça Catalunya, Carrer de Pelai, 08001, Carrer de Pelai, Barcelona, Catalunya, España" }, "geometry": { "type": "Point", "coordinates": [ 430467.89606507238932, 4581904.777249946258962 ] } },
+{ "type": "Feature", "properties": { "index": "dist_beach_km", "address": "Barceloneta, Plaça de Pau Vila, 08003, Plaça de Pau Vila, Barcelona, Catalunya, España" }, "geometry": { "type": "Point", "coordinates": [ 431891.336414134246297, 4581488.790882270783186 ] } },
+{ "type": "Feature", "properties": { "index": "dist_sagrada_familia_km", "address": "Basílica de la Sagrada Família, Carrer de Mallorca, 08013, Carrer de Mallorca, Barcelona, Catalunya, España" }, "geometry": { "type": "Point", "coordinates": [ 430993.010682158870623, 4583880.286267925053835 ] } },
+{ "type": "Feature", "properties": { "index": "dist_park_guell_km", "address": "Parc Güell, Barcelona, Catalunya, España" }, "geometry": { "type": "Point", "coordinates": [ 429168.187108882528264, 4585089.27649287506938 ] } },
+{ "type": "Feature", "properties": { "index": "dist_camp_nou_km", "address": "Spotify Camp Nou, Avinguda de Joan XXIII, 08028, Avinguda de Joan XXIII, Barcelona, Catalunya, España" }, "geometry": { "type": "Point", "coordinates": [ 426653.612504268123303, 4581410.996417060494423 ] } }
+]
+}
