@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "tfm-airbnb"
+version = "0.1.0"
+description = "Airbnb TFM dashboard"
+authors = ["Tatiana"]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+xgboost = "3.4.1"
+scikit-learn = "1.6.1"
+numpy = "2.1.3"
+pandas = "2.2.3"
+streamlit = ">=1.38"
+pyarrow = ">=17.0"
+shap = ">=0.46"
+matplotlib = ">=3.9"
+pyproj = "3.7.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
