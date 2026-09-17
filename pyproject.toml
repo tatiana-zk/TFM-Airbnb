@@ -5,7 +5,7 @@ description = "Airbnb TFM dashboard"
 authors = ["Tatiana"]
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.13"
+python = ">=3.13,<3.14"
 xgboost = "3.4.1"
 scikit-learn = "1.6.1"
 numpy = "2.1.3"
